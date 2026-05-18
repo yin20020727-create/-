@@ -3454,6 +3454,24 @@ class MainWindow(QWidget):
             keyboard.add_hotkey('home', lambda: signals.trigger_home.emit(), suppress=True)
         except Exception:
             pass
+        # 定时器：每30秒检查热键是否存活，失效则自动重注册
+        if not hasattr(self, '_hotkey_watchdog'):
+            self._hotkey_watchdog = QTimer(self)
+            self._hotkey_watchdog.timeout.connect(self._check_hotkeys_alive)
+            self._hotkey_watchdog.start(30000)
+
+    def _check_hotkeys_alive(self):
+        """检查热键是否还在工作，如果被系统卸载则重新注册"""
+        try:
+            # keyboard 库内部维护 _hotkeys 字典，如果为空说明被清了
+            if not keyboard._hotkeys:
+                self._register_hotkeys_once()
+        except Exception:
+            # 出任何异常都尝试重注册
+            try:
+                self._register_hotkeys_once()
+            except Exception:
+                pass
 
     # ── 渲染循环 ───────────────────────────────────────────────────
     def _render_tick(self):
@@ -3991,10 +4009,10 @@ class MainWindow(QWidget):
             # 压缩卡片内边距
             self.card.layout().setContentsMargins(8, 6, 8, 6)
             self.card.layout().setSpacing(5)
-            # 压缩输入框高度
-            self.input_remark.setFixedHeight(32)
+            # 压缩输入框高度（36px确保中文不被截断）
+            self.input_remark.setFixedHeight(36)
             self.input_remark.setMinimumWidth(200)
-            self.input_invite.setFixedHeight(32)
+            self.input_invite.setFixedHeight(36)
             self.input_invite.setMinimumWidth(200)
             # 压缩操作行按钮
             self.btn_prev.setFixedSize(58, 34)
