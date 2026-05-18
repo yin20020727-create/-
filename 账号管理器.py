@@ -3751,6 +3751,15 @@ class MainWindow(QWidget):
         action.addWidget(btn_next)
         main_layout.addLayout(action)
 
+        # 守望先锋启动行
+        ow_row = QHBoxLayout()
+        ow_row.setSpacing(15)
+        btn_ow = ThemedButton("🎯 启动守望先锋", 'gold')
+        btn_ow.setFixedHeight(44)
+        btn_ow.clicked.connect(self.launch_overwatch)
+        ow_row.addWidget(btn_ow, stretch=1)
+        main_layout.addLayout(ow_row)
+
     def apply_qss(self):
         theme = T()
         c = theme['primary']; sec = theme['secondary']; acc = theme['accent']
@@ -4084,21 +4093,20 @@ class MainWindow(QWidget):
         try:
             # 让 F4 完全释放
             time.sleep(0.05)
-            # 切英文输入法
+            # 切英文输入法，防止中文输入法导致重复字符
             force_english_ime()
-            # 尝试聚焦战网窗口
-            focus_battlenet_window()
-            time.sleep(0.15)
-
-            # 账号
+            time.sleep(0.1)
+            # 不切窗口，直接在当前焦点（浏览器输入框）输入
+            # 清空当前输入框
             clear_focused_input()
-            paste_text_via_clipboard(user)
+            # 直接键入账号
+            pyautogui.typewrite(user, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('tab')
             time.sleep(0.12)
-            # 密码
+            # 清空密码框并键入密码
             clear_focused_input()
-            paste_text_via_clipboard(pwd)
+            pyautogui.typewrite(pwd, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(
@@ -4134,10 +4142,9 @@ class MainWindow(QWidget):
     def _inject_token(self, code):
         try:
             time.sleep(0.08)
-            force_english_ime()
-            time.sleep(0.05)
+            # 直接在当前焦点输入框键入安全令
             clear_focused_input()
-            paste_text_via_clipboard(code)
+            pyautogui.typewrite(code, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(f"✓ 安全令 [{code}] 注入成功", T()['accent'].name())
@@ -4343,6 +4350,18 @@ class MainWindow(QWidget):
                 signals.update_status.emit(f"✗ 启动失败: {e}", "#FF3030")
 
         threading.Thread(target=workflow, daemon=True).start()
+
+    # ═══════════════════════════════════════════════════════════════
+    # 启动守望先锋
+    # ═══════════════════════════════════════════════════════════════
+    def launch_overwatch(self):
+        """通过 battlenet:// 协议启动守望先锋2"""
+        self.set_status_text("🎯 正在启动守望先锋...")
+        try:
+            os.startfile("battlenet://Pro")
+            self.set_status_text("✅ 守望先锋启动指令已发送", T()['accent'].name())
+        except Exception as e:
+            self.set_status_text(f"✗ 启动失败: {e}", "#FF3030")
 
     # ═══════════════════════════════════════════════════════════════
     # 关闭事件
