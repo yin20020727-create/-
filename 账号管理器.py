@@ -15,6 +15,7 @@ import re
 import random
 import math
 import ctypes
+import ctypes.wintypes  # 用于窗口枚举
 import shutil
 from datetime import datetime, timedelta
 
@@ -456,17 +457,31 @@ def get_today_stat():
 # 注入工具（剪贴板法 + 输入法切换 + 窗口聚焦）
 # ═══════════════════════════════════════════════════════════════════
 
+# 战网相关进程名（用于精准识别登录窗口）
+BNET_PROCESS_NAMES = (
+    'Battle.net.exe',           # 主客户端
+    'Battle.net Launcher.exe',  # 启动器
+    'BlizzardError.exe',
+    'Agent.exe',
+)
+
+# 战网相关窗口标题关键字（兜底用，不区分大小写）
+BNET_TITLE_KEYWORDS = (
+    'battle.net', '战网', 'blizzard', '暴雪',
+    '登录', 'login', 'sign in', 'log in', '登入',
+    'account.battle.net',  # 网页登录页可能出现的标题
+)
+
+
 def force_english_ime():
     """
-    切换当前焦点窗口的输入法为英文。
-    主要解决搜狗/QQ/微软拼音激活时 pyautogui.write 被吞字的问题。
+    切换当前前台窗口的输入法为英文。
+    主要解决搜狗/QQ/微软拼音激活时键盘事件被吞字的问题。
     """
     if sys.platform != 'win32':
         return
     try:
-        # 加载美式英文键盘 (0x0409)
         ctypes.windll.user32.LoadKeyboardLayoutW("00000409", 1)
-        # 通知前台窗口切换 IME
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         if hwnd:
             # WM_INPUTLANGCHANGEREQUEST = 0x0050
@@ -475,54 +490,214 @@ def force_english_ime():
         pass
 
 
+def _get_window_title(hwnd):
+    if not hwnd:
+        return ""
+    try:
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return ""
+        buf = ctypes.create_unicode_buffer(length + 1)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+        return buf.value or ""
+    except Exception:
+        return ""
+
+
+def _get_window_pid(hwnd):
+    if not hwnd:
+        return 0
+    try:
+        pid = ctypes.c_ulong(0)
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value
+    except Exception:
+        return 0
+
+
+def _get_process_name(pid):
+    """通过 PID 取进程名（不依赖第三方包）"""
+    if not pid or sys.platform != 'win32':
+        return ""
+    try:
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(512)
+            size = ctypes.c_ulong(512)
+            # QueryFullProcessImageNameW
+            if ctypes.windll.kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return os.path.basename(buf.value or "")
+            return ""
+        finally:
+            ctypes.windll.kernel32.CloseHandle(h)
+    except Exception:
+        return ""
+
+
+def _is_battlenet_hwnd(hwnd):
+    """判断一个窗口是否属于战网 / 网页登录页"""
+    if not hwnd:
+        return False
+    try:
+        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+            return False
+        # 1) 进程名优先（最可靠）
+        pid = _get_window_pid(hwnd)
+        proc = _get_process_name(pid).lower()
+        for name in BNET_PROCESS_NAMES:
+            if proc == name.lower():
+                return True
+        # 2) 兜底：标题关键字
+        title = _get_window_title(hwnd).lower()
+        if not title:
+            return False
+        for kw in BNET_TITLE_KEYWORDS:
+            if kw.lower() in title:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def find_battlenet_window():
     """
-    查找战网登录窗口句柄。
+    查找战网（含网页登录页）主窗口句柄。
+    优先返回有 WS_VISIBLE + 非工具窗口 + 进程名匹配的最大可见窗口。
     """
     if sys.platform != 'win32':
         return 0
     try:
         EnumWindows = ctypes.windll.user32.EnumWindows
-        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.POINTER(ctypes.c_int))
-        GetWindowText = ctypes.windll.user32.GetWindowTextW
-        IsWindowVisible = ctypes.windll.user32.IsWindowVisible
-
-        result = {'hwnd': 0}
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p,
+                                             ctypes.POINTER(ctypes.c_int))
+        candidates = []  # (priority, area, hwnd)
 
         def callback(hwnd, _):
-            if not IsWindowVisible(hwnd):
-                return True
-            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-            if length == 0:
-                return True
-            buf = ctypes.create_unicode_buffer(length + 1)
-            GetWindowText(hwnd, buf, length + 1)
-            title = buf.value
-            if 'Battle.net' in title or '战网' in title or 'Blizzard' in title:
-                result['hwnd'] = hwnd
-                return False
+            try:
+                if not ctypes.windll.user32.IsWindowVisible(hwnd):
+                    return True
+                # 排除子窗口
+                if ctypes.windll.user32.GetParent(hwnd):
+                    return True
+                pid = _get_window_pid(hwnd)
+                proc = _get_process_name(pid).lower()
+                title = _get_window_title(hwnd)
+                rect = ctypes.wintypes.RECT()
+                ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                area = max(0, (rect.right - rect.left)) * max(0, (rect.bottom - rect.top))
+                # 太小的窗口跳过（< 200x100）
+                if (rect.right - rect.left) < 200 or (rect.bottom - rect.top) < 100:
+                    return True
+                pri = 0
+                proc_match = any(proc == n.lower() for n in BNET_PROCESS_NAMES)
+                title_low = title.lower()
+                title_match = any(k.lower() in title_low for k in BNET_TITLE_KEYWORDS)
+                if proc_match and title:
+                    pri = 3
+                elif proc_match:
+                    pri = 2
+                elif title_match:
+                    pri = 1
+                if pri > 0:
+                    candidates.append((pri, area, hwnd))
+            except Exception:
+                pass
             return True
 
+        # 需要 wintypes
         EnumWindows(EnumWindowsProc(callback), 0)
-        return result['hwnd']
+        if not candidates:
+            return 0
+        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        return candidates[0][2]
     except Exception:
         return 0
 
 
-def focus_battlenet_window():
-    """尝试将战网窗口置于前台"""
-    if sys.platform != 'win32':
+def force_foreground(hwnd, timeout_ms=600):
+    """
+    强行把窗口拉到前台（绕过 Windows 防焦点抢夺）。
+    技巧：把当前前台线程和目标线程 AttachThreadInput 后再 SetForegroundWindow。
+    返回 True 表示前台切换成功（已用 GetForegroundWindow 验证）。
+    """
+    if sys.platform != 'win32' or not hwnd:
         return False
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
     try:
-        hwnd = find_battlenet_window()
-        if hwnd:
-            # 先恢复（如果最小化）再置顶
-            ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
+        # 1) 取消最小化
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+
+        # 2) 直接尝试一次（Win11/某些系统已经够了）
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.05)
+        if user32.GetForegroundWindow() == hwnd:
             return True
+
+        # 3) AttachThreadInput 黑魔法
+        cur_fg = user32.GetForegroundWindow()
+        fg_tid = user32.GetWindowThreadProcessId(cur_fg, None) if cur_fg else 0
+        cur_tid = kernel32.GetCurrentThreadId()
+        target_tid = user32.GetWindowThreadProcessId(hwnd, None)
+
+        attached1 = attached2 = False
+        try:
+            if fg_tid and fg_tid != cur_tid:
+                attached1 = bool(user32.AttachThreadInput(cur_tid, fg_tid, True))
+            if target_tid and target_tid != cur_tid:
+                attached2 = bool(user32.AttachThreadInput(cur_tid, target_tid, True))
+
+            user32.BringWindowToTop(hwnd)
+            user32.ShowWindow(hwnd, 5)  # SW_SHOW
+            user32.SetForegroundWindow(hwnd)
+            user32.SetFocus(hwnd)
+            user32.SetActiveWindow(hwnd)
+        finally:
+            if attached1:
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
+            if attached2:
+                user32.AttachThreadInput(cur_tid, target_tid, False)
+
+        # 4) 轮询验证（最多 timeout_ms）
+        deadline = time.time() + timeout_ms / 1000.0
+        while time.time() < deadline:
+            if user32.GetForegroundWindow() == hwnd:
+                return True
+            time.sleep(0.03)
+        # 最终是否切换到了战网相关窗口（hwnd 可能切到了同进程的子窗口）
+        return _is_battlenet_hwnd(user32.GetForegroundWindow())
     except Exception:
-        pass
-    return False
+        return False
+
+
+def ensure_battlenet_foreground():
+    """
+    确保战网窗口在前台，并返回 (ok, hwnd)。
+    ok=False 时调用方应放弃注入，避免发到错误窗口（桌面/资源管理器等）。
+    """
+    if sys.platform != 'win32':
+        # 非 Windows 平台不做强制前台，但允许继续（pyautogui 仍按当前焦点）
+        return True, 0
+    user32 = ctypes.windll.user32
+    cur_fg = user32.GetForegroundWindow()
+    # 已经在前台
+    if cur_fg and _is_battlenet_hwnd(cur_fg):
+        return True, cur_fg
+    hwnd = find_battlenet_window()
+    if not hwnd:
+        return False, 0
+    ok = force_foreground(hwnd)
+    if ok:
+        return True, hwnd
+    # 二次校验：前台是不是战网相关
+    fg = user32.GetForegroundWindow()
+    if _is_battlenet_hwnd(fg):
+        return True, fg
+    return False, 0
 
 
 def _set_clipboard_text_win(text):
@@ -576,16 +751,27 @@ def paste_text_via_clipboard(text):
         except Exception:
             pass
     # 给系统一点时间同步剪贴板
-    time.sleep(0.05)
+    time.sleep(0.06)
     pyautogui.hotkey('ctrl', 'v')
 
 
 def clear_focused_input():
-    """清空当前焦点输入框"""
-    pyautogui.hotkey('ctrl', 'a')
-    time.sleep(0.03)
-    pyautogui.press('backspace')
-    time.sleep(0.03)
+    """清空当前焦点输入框（Home + Shift+End + Delete 比 Ctrl+A 更稳，
+    避免在某些 webview 中触发全选页面文字）。"""
+    # 先尝试稳健的方式
+    try:
+        pyautogui.press('end')
+        time.sleep(0.02)
+        pyautogui.hotkey('shift', 'home')
+        time.sleep(0.02)
+        pyautogui.press('delete')
+        time.sleep(0.04)
+    except Exception:
+        # 兜底
+        pyautogui.hotkey('ctrl', 'a')
+        time.sleep(0.03)
+        pyautogui.press('delete')
+        time.sleep(0.03)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -4063,46 +4249,55 @@ class MainWindow(QWidget):
             )
 
     # ═══════════════════════════════════════════════════════════════
-    # F4 / F2 注入（重写：剪贴板法 + IME切英文 + 子线程）
+    # F4 注入（极简版：只做剪贴板粘贴，不切窗口、不切输入法）
+    # ───────────────────────────────────────────────────────────────
+    # 使用前提：用户已经手动点击了战网网页登录的“账号”输入框，
+    # 让光标停在账号框里，再按 F4。本程序只负责：
+    #   1) 把账号放到剪贴板 → Ctrl+V 粘贴 → Enter 提交（跳到密码页）
+    #   2) 等待网页跳转
+    #   3) 把密码放到剪贴板 → Ctrl+V 粘贴 → Enter 提交
+    # 不做任何窗口聚焦、前台校验、输入法切换，避免误触桌面/资源管理器。
     # ═══════════════════════════════════════════════════════════════
     def execute_f4_injection(self):
         if not self.db or self._is_injecting:
             return
         self._is_injecting = True
         acc = self.db[self.current_idx]
-        self.set_status_text(f"⚡ F4触发：注入 {acc['user'][:20]}...")
-        # 清焦点（避免注入到本窗口）
-        self.clearFocus()
-        for w in (self.input_invite, self.input_remark):
-            if w.hasFocus():
-                w.clearFocus()
-        # 子线程执行注入
-        threading.Thread(target=self._inject_credentials, args=(acc['user'], acc['pwd']),
-                         daemon=True).start()
+        self.set_status_text(
+            f"⚡ F4：粘贴中…(请先点战网账号框)", T()['primary'].name()
+        )
+        threading.Thread(
+            target=self._inject_credentials, args=(acc['user'], acc['pwd']),
+            daemon=True
+        ).start()
 
     def _inject_credentials(self, user, pwd):
         try:
-            # 让 F4 完全释放
-            time.sleep(0.05)
-            # 切英文输入法
-            force_english_ime()
-            # 尝试聚焦战网窗口
-            focus_battlenet_window()
+            # 等 F4 按键完全释放
             time.sleep(0.15)
 
-            # 账号
-            clear_focused_input()
-            paste_text_via_clipboard(user)
+            # ─── 账号 ───
+            if not _set_clipboard_text_win(user):
+                QApplication.clipboard().setText(user)
             time.sleep(0.08)
-            pyautogui.press('tab')
+            pyautogui.hotkey('ctrl', 'v')
             time.sleep(0.12)
-            # 密码
-            clear_focused_input()
-            paste_text_via_clipboard(pwd)
+            pyautogui.press('enter')          # 提交账号 → 跳到密码页
+
+            # 等待网页跳转到密码页
+            time.sleep(0.9)
+
+            # ─── 密码 ───
+            if not _set_clipboard_text_win(pwd):
+                QApplication.clipboard().setText(pwd)
             time.sleep(0.08)
-            pyautogui.press('enter')
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(0.12)
+            pyautogui.press('enter')          # 提交密码 → 跳到安全令页
+
             signals.update_status.emit(
-                "✓ 账密注入完成！按 F2 获取安全令", T()['accent'].name()
+                "✓ 账密已填充！按 F2 获取并填入安全令",
+                T()['accent'].name()
             )
         except Exception as e:
             signals.update_status.emit(f"✗ 注入失败: {e}", "#FF3030")
@@ -4113,7 +4308,7 @@ class MainWindow(QWidget):
         if not self.db or self._is_injecting:
             return
         acc = self.db[self.current_idx]
-        self.set_status_text("⏳ F2触发：请求安全令...")
+        self.set_status_text("⏳ F2触发：请求安全令服务器...")
         self.clearFocus()
         threading.Thread(target=self._bg_f2, args=(acc['secret'],), daemon=True).start()
 
@@ -4134,13 +4329,35 @@ class MainWindow(QWidget):
     def _inject_token(self, code):
         try:
             time.sleep(0.08)
+
+            # 1) 强制聚焦并验证（必须）
+            ok, _ = ensure_battlenet_foreground()
+            if not ok:
+                signals.update_status.emit(
+                    "✗ 未找到战网窗口，安全令未注入（已复制到剪贴板）",
+                    "#FF3030"
+                )
+                # 兜底：放剪贴板，让用户手动粘
+                _set_clipboard_text_win(code) or QApplication.clipboard().setText(code)
+                return
+
             force_english_ime()
-            time.sleep(0.05)
+            time.sleep(0.12)
+
+            # 二次校验
+            ok, _ = ensure_battlenet_foreground()
+            if not ok:
+                signals.update_status.emit("✗ 战网窗口失焦，已中止", "#FF3030")
+                return
+
             clear_focused_input()
             paste_text_via_clipboard(code)
-            time.sleep(0.08)
+            time.sleep(0.12)
             pyautogui.press('enter')
-            signals.update_status.emit(f"✓ 安全令 [{code}] 注入成功", T()['accent'].name())
+            signals.update_status.emit(
+                f"✓ 安全令 [{code}] 注入成功",
+                T()['accent'].name()
+            )
         except Exception as e:
             signals.update_status.emit(f"✗ 注入失败: {e}", "#FF3030")
         finally:
