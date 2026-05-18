@@ -4249,84 +4249,54 @@ class MainWindow(QWidget):
             )
 
     # ═══════════════════════════════════════════════════════════════
-    # F4 / F2 注入（剪贴板法 + 强制前台验证 + 适配新版网页分步登录）
+    # F4 注入（极简版：只做剪贴板粘贴，不切窗口、不切输入法）
+    # ───────────────────────────────────────────────────────────────
+    # 使用前提：用户已经手动点击了战网网页登录的“账号”输入框，
+    # 让光标停在账号框里，再按 F4。本程序只负责：
+    #   1) 把账号放到剪贴板 → Ctrl+V 粘贴 → Enter 提交（跳到密码页）
+    #   2) 等待网页跳转
+    #   3) 把密码放到剪贴板 → Ctrl+V 粘贴 → Enter 提交
+    # 不做任何窗口聚焦、前台校验、输入法切换，避免误触桌面/资源管理器。
     # ═══════════════════════════════════════════════════════════════
     def execute_f4_injection(self):
         if not self.db or self._is_injecting:
             return
         self._is_injecting = True
         acc = self.db[self.current_idx]
-        self.set_status_text(f"⚡ F4触发：定位战网窗口...")
-        # 清焦点（避免注入到本窗口）
-        self.clearFocus()
-        for w in (self.input_invite, self.input_remark):
-            if w.hasFocus():
-                w.clearFocus()
+        self.set_status_text(
+            f"⚡ F4：粘贴中…(请先点战网账号框)", T()['primary'].name()
+        )
         threading.Thread(
             target=self._inject_credentials, args=(acc['user'], acc['pwd']),
             daemon=True
         ).start()
 
     def _inject_credentials(self, user, pwd):
-        """
-        新版战网登录是分页面的：
-          页面1: 邮箱/账号 → 回车（或点继续）→ 跳到密码页
-          页面2: 密码 → 回车 → 跳到安全令页
-        所以不再用 Tab 切换字段，而是 [输入]→[Enter]→[等页面切换]→[再次校验前台]→[输入]
-        """
         try:
-            # 让 F4 完全释放
+            # 等 F4 按键完全释放
+            time.sleep(0.15)
+
+            # ─── 账号 ───
+            if not _set_clipboard_text_win(user):
+                QApplication.clipboard().setText(user)
             time.sleep(0.08)
-
-            # 1) 强制把战网窗口拉到前台并验证；失败则放弃，避免发到桌面
-            ok, hwnd = ensure_battlenet_foreground()
-            if not ok:
-                signals.update_status.emit(
-                    "✗ 未找到战网登录窗口（已中止注入，避免误操作）",
-                    "#FF3030"
-                )
-                return
-
-            # 2) 切英文输入法（避免被中文 IME 吞字）
-            force_english_ime()
-            time.sleep(0.18)
-
-            # 再次校验前台（防止用户手贱切走）
-            ok, _ = ensure_battlenet_foreground()
-            if not ok:
-                signals.update_status.emit("✗ 战网窗口失焦，已中止", "#FF3030")
-                return
-
-            # ─── 页面 1：账号 ───
-            clear_focused_input()
-            paste_text_via_clipboard(user)
+            pyautogui.hotkey('ctrl', 'v')
             time.sleep(0.12)
             pyautogui.press('enter')          # 提交账号 → 跳到密码页
-            signals.update_status.emit(
-                f"⚡ 账号已提交，等待密码页...", T()['primary'].name()
-            )
 
-            # 3) 等待密码页加载（网页跳转有 ~0.6~1.2s 延迟）
+            # 等待网页跳转到密码页
             time.sleep(0.9)
 
-            # 4) 注入密码前再次校验前台
-            ok, _ = ensure_battlenet_foreground()
-            if not ok:
-                signals.update_status.emit(
-                    "✗ 密码页前台校验失败，已中止注入", "#FF3030"
-                )
-                return
-            force_english_ime()
+            # ─── 密码 ───
+            if not _set_clipboard_text_win(pwd):
+                QApplication.clipboard().setText(pwd)
             time.sleep(0.08)
-
-            # ─── 页面 2：密码 ───
-            clear_focused_input()
-            paste_text_via_clipboard(pwd)
+            pyautogui.hotkey('ctrl', 'v')
             time.sleep(0.12)
             pyautogui.press('enter')          # 提交密码 → 跳到安全令页
 
             signals.update_status.emit(
-                "✓ 账密已注入！按 F2 自动获取并填入安全令",
+                "✓ 账密已填充！按 F2 获取并填入安全令",
                 T()['accent'].name()
             )
         except Exception as e:
