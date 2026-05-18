@@ -4352,29 +4352,13 @@ class MainWindow(QWidget):
     # 启动守望先锋
     # ═══════════════════════════════════════════════════════════════
     def launch_overwatch(self):
+        """通过 battlenet:// 协议启动守望先锋2"""
         self.set_status_text("🎯 正在启动守望先锋...")
-
-        def ow_workflow():
-            cfg = load_config()
-            bnet_path = cfg.get('bnet_path', DEFAULT_BNET_LAUNCHER)
-            if not os.path.exists(bnet_path):
-                if os.path.exists(DEFAULT_BNET_LAUNCHER):
-                    bnet_path = DEFAULT_BNET_LAUNCHER
-                else:
-                    signals.update_status.emit(
-                        "✗ 未找到战网路径，请到设置中配置", "#FF3030"
-                    )
-                    return
-            try:
-                # 守望先锋2的启动参数: --game=pro (Pro = Prometheus = Overwatch 2)
-                subprocess.Popen([bnet_path, "--game=pro"])
-                signals.update_status.emit(
-                    "✅ 守望先锋启动中...", T()['accent'].name()
-                )
-            except Exception as e:
-                signals.update_status.emit(f"✗ 启动失败: {e}", "#FF3030")
-
-        threading.Thread(target=ow_workflow, daemon=True).start()
+        try:
+            os.startfile("battlenet://Pro")
+            self.set_status_text("✅ 守望先锋启动指令已发送", T()['accent'].name())
+        except Exception as e:
+            self.set_status_text(f"✗ 启动失败: {e}", "#FF3030")
 
     # ═══════════════════════════════════════════════════════════════
     # 关闭事件
