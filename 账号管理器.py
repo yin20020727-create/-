@@ -475,6 +475,25 @@ def force_english_ime():
         pass
 
 
+def force_chinese_ime():
+    """
+    切换当前焦点窗口的输入法为中文。
+    点击备注栏时自动切回中文输入，方便用户快速输入中文备注。
+    """
+    if sys.platform != 'win32':
+        return
+    try:
+        # 加载中文键盘布局 (0x0804 = 简体中文)
+        ctypes.windll.user32.LoadKeyboardLayoutW("00000804", 1)
+        # 通知前台窗口切换 IME
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if hwnd:
+            # WM_INPUTLANGCHANGEREQUEST = 0x0050
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, 0x08040804)
+    except Exception:
+        pass
+
+
 def find_battlenet_window():
     """
     查找战网登录窗口句柄。
@@ -3611,8 +3630,9 @@ class MainWindow(QWidget):
         title_bar.addWidget(btn_close)
         main_layout.addLayout(title_bar)
 
-        # 进度行
-        header = QHBoxLayout()
+        # 进度行（包装在容器中以便极简模式隐藏）
+        self.header_widget = QWidget()
+        header = QHBoxLayout(self.header_widget)
         header.setContentsMargins(0, 8, 0, 8)
         self.lbl_progress_curr = FlipNumberLabel("0")
         self.lbl_progress_curr.setObjectName("ProgCurrent")
@@ -3637,7 +3657,7 @@ class MainWindow(QWidget):
         btn_overview.setFixedHeight(34)
         btn_overview.clicked.connect(self.toggle_overview_window)
         header.addWidget(btn_overview)
-        main_layout.addLayout(header)
+        main_layout.addWidget(self.header_widget)
 
         # 卡片
         self.card = QFrame()
@@ -3694,6 +3714,8 @@ class MainWindow(QWidget):
         ])
         self.input_remark.setPlaceholderText("可选, 添加备注...")
         self.input_remark.textChanged.connect(self.on_remark_changed)
+        # 备注栏聚焦时自动切换中文输入法
+        self.input_remark.focusInEvent = self._remark_focus_in_event
 
         self.input_invite = build_row(4, "👥", "#06B6D4", "入队码", False, [
             ("粘贴", "blue", self.paste_invite_logic, "📋"),
@@ -3712,8 +3734,9 @@ class MainWindow(QWidget):
         card_layout.addWidget(self.lbl_inner_status)
         main_layout.addWidget(self.card, stretch=1)
 
-        # 信息栏
-        info_bar = QHBoxLayout()
+        # 信息栏（包装在容器中以便极简模式隐藏）
+        self.info_bar_widget = QWidget()
+        info_bar = QHBoxLayout(self.info_bar_widget)
         info_bar.setContentsMargins(2, 0, 2, 0)
         info_bar.setSpacing(15)
 
@@ -3732,23 +3755,23 @@ class MainWindow(QWidget):
         )
         self.lbl_hotkey_hint.setObjectName("HotkeyHint")
         info_bar.addWidget(self.lbl_hotkey_hint)
-        main_layout.addLayout(info_bar)
+        main_layout.addWidget(self.info_bar_widget)
 
         # 操作行
         action = QHBoxLayout()
         action.setSpacing(15)
-        btn_prev = ThemedButton("◀ 上一号", 'primary')
-        btn_prev.setFixedSize(110, 48)
-        btn_prev.clicked.connect(self.go_prev)
-        action.addWidget(btn_prev)
-        btn_launch = MegaLaunchButton("◎ 一键切号登录 (F4 账密 | F2 安全令)")
-        btn_launch.setFixedHeight(52)
-        btn_launch.clicked.connect(self.launch_battlenet_workflow)
-        action.addWidget(btn_launch, stretch=1)
-        btn_next = ThemedButton("下一号 ▶", 'secondary')
-        btn_next.setFixedSize(110, 48)
-        btn_next.clicked.connect(self.go_next)
-        action.addWidget(btn_next)
+        self.btn_prev = ThemedButton("◀ 上一号", 'primary')
+        self.btn_prev.setFixedSize(110, 48)
+        self.btn_prev.clicked.connect(self.go_prev)
+        action.addWidget(self.btn_prev)
+        self.btn_launch = MegaLaunchButton("◎ 一键切号登录 (F4 账密 | F2 安全令)")
+        self.btn_launch.setFixedHeight(52)
+        self.btn_launch.clicked.connect(self.launch_battlenet_workflow)
+        action.addWidget(self.btn_launch, stretch=1)
+        self.btn_next = ThemedButton("下一号 ▶", 'secondary')
+        self.btn_next.setFixedSize(110, 48)
+        self.btn_next.clicked.connect(self.go_next)
+        action.addWidget(self.btn_next)
         main_layout.addLayout(action)
 
     def apply_qss(self):
@@ -3935,17 +3958,70 @@ class MainWindow(QWidget):
 
     def toggle_mini_mode(self):
         self.is_mini_mode = not self.is_mini_mode
+        # ── 极简模式：只保留 备注+入队码+上下号+切号+启动OW ──
+        # 隐藏账号/密码/安全令行（rows 0,1,2）
         for w in self.hideable_widgets:
             w.setVisible(not self.is_mini_mode)
+        # 隐藏进度头部（序号/导入/总览按钮）
+        self.header_widget.setVisible(not self.is_mini_mode)
+        # 隐藏信息栏（时钟/统计/快捷键提示）
+        self.info_bar_widget.setVisible(not self.is_mini_mode)
+        # 隐藏卡片内状态文本
+        self.lbl_inner_status.setVisible(not self.is_mini_mode)
+        # 隐藏标题栏中的主题/设置按钮（保留标题文字+pin+mini+最小化+关闭）
+        self.btn_theme.setVisible(not self.is_mini_mode)
+        self.btn_settings.setVisible(not self.is_mini_mode)
+        # 备注/入队码行按钮压缩
         for btn, text, icon in self.shrinkable_buttons:
             if self.is_mini_mode:
-                btn.setText(icon); btn.setFixedWidth(36)
+                btn.setText(icon); btn.setFixedWidth(32); btn.setFixedHeight(28)
             else:
-                btn.setText(f"{icon} {text}" if icon else text); btn.setFixedWidth(70)
+                btn.setText(f"{icon} {text}" if icon else text)
+                btn.setFixedWidth(70); btn.setFixedHeight(36)
         if self.is_mini_mode:
-            self.resize(740, 290)
-            self.set_status_text("⚔ 极简战斗模式已激活")
+            # 压缩标题
+            self.lbl_title.setText("🛡️ 极简战斗")
+            # 压缩卡片内边距
+            self.card.layout().setContentsMargins(10, 8, 10, 8)
+            self.card.layout().setSpacing(6)
+            # 压缩输入框高度
+            self.input_remark.setFixedHeight(30)
+            self.input_invite.setFixedHeight(30)
+            # 压缩操作行按钮
+            self.btn_prev.setFixedSize(70, 36)
+            self.btn_prev.setText("◀ 上号")
+            self.btn_next.setFixedSize(70, 36)
+            self.btn_next.setText("下号 ▶")
+            self.btn_launch.setFixedHeight(38)
+            self.btn_launch.setText("◎ 启动OW (F4)")
+            # 压缩主窗口边距
+            self.layout().setContentsMargins(12, 8, 12, 10)
+            self.layout().setSpacing(6)
+            # 极限压缩窗口尺寸
+            self.resize(420, 195)
+            self.setMinimumSize(420, 195)
+            self.set_status_text("⚔ 极简战斗模式")
         else:
+            # 恢复标题
+            self.lbl_title.setText("🛡️ " + T()['subtitle'])
+            # 恢复卡片内边距
+            self.card.layout().setContentsMargins(20, 18, 20, 18)
+            self.card.layout().setSpacing(10)
+            # 恢复输入框高度
+            self.input_remark.setFixedHeight(38)
+            self.input_invite.setFixedHeight(38)
+            # 恢复操作行按钮
+            self.btn_prev.setFixedSize(110, 48)
+            self.btn_prev.setText("◀ 上一号")
+            self.btn_next.setFixedSize(110, 48)
+            self.btn_next.setText("下一号 ▶")
+            self.btn_launch.setFixedHeight(52)
+            self.btn_launch.setText("◎ 一键切号登录 (F4 账密 | F2 安全令)")
+            # 恢复主窗口边距
+            self.layout().setContentsMargins(28, 18, 28, 25)
+            self.layout().setSpacing(12)
+            # 恢复窗口尺寸
+            self.setMinimumSize(0, 0)
             self.resize(740, 640)
             self.set_status_text("✨ 完全视图已恢复")
 
@@ -4168,6 +4244,12 @@ class MainWindow(QWidget):
     # ═══════════════════════════════════════════════════════════════
     # 备注 / 入队码（debounce 保存 + 简化标志）
     # ═══════════════════════════════════════════════════════════════
+    def _remark_focus_in_event(self, event):
+        """备注栏聚焦时自动切换到中文输入法"""
+        force_chinese_ime()
+        # 调用原始 ThemedLineEdit 的 focusInEvent
+        ThemedLineEdit.focusInEvent(self.input_remark, event)
+
     def on_remark_changed(self):
         if self.is_updating or not self.db:
             return
