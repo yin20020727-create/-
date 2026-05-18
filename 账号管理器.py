@@ -4169,7 +4169,7 @@ class MainWindow(QWidget):
 
     def _inject_credentials(self, user, pwd):
         """
-        通过剪贴板粘贴账密到当前焦点输入框。
+        通过模拟键盘逐字输入账密到当前焦点输入框（不动剪贴板）。
         不切换窗口，用户需要先点击浏览器账号输入框。
         """
         try:
@@ -4179,17 +4179,17 @@ class MainWindow(QWidget):
             force_english_ime()
             time.sleep(0.05)
 
-            # 账号 - 清空当前框并粘贴
+            # 账号 - 清空当前框并逐字输入
             clear_focused_input()
             time.sleep(0.03)
-            paste_text_via_clipboard(user)
+            pyautogui.typewrite(user, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('tab')
             time.sleep(0.12)
-            # 密码 - 清空当前框并粘贴
+            # 密码 - 清空当前框并逐字输入
             clear_focused_input()
             time.sleep(0.03)
-            paste_text_via_clipboard(pwd)
+            pyautogui.typewrite(pwd, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(
@@ -4224,7 +4224,7 @@ class MainWindow(QWidget):
 
     def _inject_token(self, code):
         """
-        通过剪贴板粘贴安全令到当前焦点输入框。
+        通过模拟键盘逐字输入安全令到当前焦点输入框（不动剪贴板）。
         不切换窗口，用户需要先点击浏览器安全令输入框。
         """
         try:
@@ -4233,7 +4233,7 @@ class MainWindow(QWidget):
             time.sleep(0.05)
             clear_focused_input()
             time.sleep(0.03)
-            paste_text_via_clipboard(code)
+            pyautogui.typewrite(code, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(f"✓ 安全令 [{code}] 注入成功", T()['accent'].name())
