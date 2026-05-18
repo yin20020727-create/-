@@ -3993,7 +3993,9 @@ class MainWindow(QWidget):
             self.card.layout().setSpacing(5)
             # 压缩输入框高度
             self.input_remark.setFixedHeight(32)
+            self.input_remark.setMinimumWidth(200)
             self.input_invite.setFixedHeight(32)
+            self.input_invite.setMinimumWidth(200)
             # 压缩操作行按钮
             self.btn_prev.setFixedSize(58, 34)
             self.btn_prev.setText("◀ 上号")
@@ -4004,9 +4006,9 @@ class MainWindow(QWidget):
             # 压缩主窗口边距
             self.layout().setContentsMargins(8, 6, 8, 8)
             self.layout().setSpacing(5)
-            # 极限压缩窗口尺寸（加大避免文字截断）
-            self.setMinimumSize(400, 195)
-            self.resize(400, 195)
+            # 极限压缩窗口尺寸（加宽避免输入框文字截断）
+            self.setMinimumSize(500, 195)
+            self.resize(500, 195)
             self.set_status_text("⚔ 极简战斗模式")
         else:
             # 恢复标题
@@ -4016,7 +4018,9 @@ class MainWindow(QWidget):
             self.card.layout().setSpacing(10)
             # 恢复输入框高度
             self.input_remark.setFixedHeight(38)
+            self.input_remark.setMinimumWidth(0)
             self.input_invite.setFixedHeight(38)
+            self.input_invite.setMinimumWidth(0)
             # 恢复操作行按钮
             self.btn_prev.setFixedSize(110, 48)
             self.btn_prev.setText("◀ 上一号")
