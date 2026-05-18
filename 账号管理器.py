@@ -4084,21 +4084,17 @@ class MainWindow(QWidget):
         try:
             # 让 F4 完全释放
             time.sleep(0.05)
-            # 切英文输入法
-            force_english_ime()
-            # 尝试聚焦战网窗口
-            focus_battlenet_window()
-            time.sleep(0.15)
-
-            # 账号
+            # 不切窗口，直接在当前焦点（浏览器输入框）输入
+            # 清空当前输入框
             clear_focused_input()
-            paste_text_via_clipboard(user)
+            # 直接键入账号
+            pyautogui.typewrite(user, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('tab')
             time.sleep(0.12)
-            # 密码
+            # 清空密码框并键入密码
             clear_focused_input()
-            paste_text_via_clipboard(pwd)
+            pyautogui.typewrite(pwd, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(
@@ -4134,10 +4130,9 @@ class MainWindow(QWidget):
     def _inject_token(self, code):
         try:
             time.sleep(0.08)
-            force_english_ime()
-            time.sleep(0.05)
+            # 直接在当前焦点输入框键入安全令
             clear_focused_input()
-            paste_text_via_clipboard(code)
+            pyautogui.typewrite(code, interval=0.02)
             time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(f"✓ 安全令 [{code}] 注入成功", T()['accent'].name())
