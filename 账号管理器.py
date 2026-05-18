@@ -3989,24 +3989,24 @@ class MainWindow(QWidget):
             # 压缩标题
             self.lbl_title.setText("⚔ 极简")
             # 压缩卡片内边距
-            self.card.layout().setContentsMargins(6, 4, 6, 4)
-            self.card.layout().setSpacing(3)
+            self.card.layout().setContentsMargins(8, 6, 8, 6)
+            self.card.layout().setSpacing(5)
             # 压缩输入框高度
-            self.input_remark.setFixedHeight(26)
-            self.input_invite.setFixedHeight(26)
+            self.input_remark.setFixedHeight(30)
+            self.input_invite.setFixedHeight(30)
             # 压缩操作行按钮
-            self.btn_prev.setFixedSize(50, 30)
+            self.btn_prev.setFixedSize(55, 32)
             self.btn_prev.setText("◀ 上号")
-            self.btn_next.setFixedSize(50, 30)
+            self.btn_next.setFixedSize(55, 32)
             self.btn_next.setText("下号 ▶")
-            self.btn_launch.setFixedHeight(32)
+            self.btn_launch.setFixedHeight(34)
             self.btn_launch.setText("◎ 启动OW (F4)")
             # 压缩主窗口边距
-            self.layout().setContentsMargins(6, 4, 6, 6)
-            self.layout().setSpacing(3)
-            # 极限压缩窗口尺寸
-            self.setMinimumSize(360, 148)
-            self.resize(360, 148)
+            self.layout().setContentsMargins(8, 6, 8, 8)
+            self.layout().setSpacing(5)
+            # 极限压缩窗口尺寸（稍微加大避免文字截断）
+            self.setMinimumSize(380, 175)
+            self.resize(380, 175)
             self.set_status_text("⚔ 极简战斗模式")
         else:
             # 恢复标题
@@ -4153,42 +4153,46 @@ class MainWindow(QWidget):
             return
         self._is_injecting = True
         acc = self.db[self.current_idx]
-        self.set_status_text(f"⚡ F4触发：注入 {acc['user'][:20]}...")
+        self.set_status_text(f"⚡ F4触发：键入 {acc['user'][:20]}...")
         # 清焦点（避免注入到本窗口）
         self.clearFocus()
         for w in (self.input_invite, self.input_remark):
             if w.hasFocus():
                 w.clearFocus()
-        # 子线程执行注入
+        # 子线程执行键入（不切换窗口，用户自行点击目标输入框）
         threading.Thread(target=self._inject_credentials, args=(acc['user'], acc['pwd']),
                          daemon=True).start()
 
     def _inject_credentials(self, user, pwd):
+        """
+        直接通过键盘模拟逐字输入账密到当前焦点输入框。
+        不操作剪贴板、不切换窗口，用户需要先点击浏览器账号输入框。
+        """
         try:
-            # 让 F4 完全释放
-            time.sleep(0.05)
-            # 切英文输入法
+            # 让 F4 按键完全释放
+            time.sleep(0.08)
+            # 切英文输入法（避免中文输入法吞字符）
             force_english_ime()
-            # 尝试聚焦战网窗口
-            focus_battlenet_window()
-            time.sleep(0.15)
+            time.sleep(0.05)
 
-            # 账号
+            # 账号 - 清空当前框并键入
             clear_focused_input()
-            paste_text_via_clipboard(user)
-            time.sleep(0.08)
+            time.sleep(0.03)
+            keyboard.write(user, delay=0.01)
+            time.sleep(0.06)
             pyautogui.press('tab')
-            time.sleep(0.12)
-            # 密码
+            time.sleep(0.10)
+            # 密码 - 清空当前框并键入
             clear_focused_input()
-            paste_text_via_clipboard(pwd)
-            time.sleep(0.08)
+            time.sleep(0.03)
+            keyboard.write(pwd, delay=0.01)
+            time.sleep(0.06)
             pyautogui.press('enter')
             signals.update_status.emit(
-                "✓ 账密注入完成！按 F2 获取安全令", T()['accent'].name()
+                "✓ 账密键入完成！等待安全令页面后按 F2", T()['accent'].name()
             )
         except Exception as e:
-            signals.update_status.emit(f"✗ 注入失败: {e}", "#FF3030")
+            signals.update_status.emit(f"✗ 键入失败: {e}", "#FF3030")
         finally:
             self._is_injecting = False
 
@@ -4215,17 +4219,22 @@ class MainWindow(QWidget):
         threading.Thread(target=self._inject_token, args=(code,), daemon=True).start()
 
     def _inject_token(self, code):
+        """
+        直接通过键盘模拟逐字输入安全令到当前焦点输入框。
+        不操作剪贴板、不切换窗口，用户需要先点击浏览器安全令输入框。
+        """
         try:
             time.sleep(0.08)
             force_english_ime()
             time.sleep(0.05)
             clear_focused_input()
-            paste_text_via_clipboard(code)
-            time.sleep(0.08)
+            time.sleep(0.03)
+            keyboard.write(code, delay=0.01)
+            time.sleep(0.06)
             pyautogui.press('enter')
-            signals.update_status.emit(f"✓ 安全令 [{code}] 注入成功", T()['accent'].name())
+            signals.update_status.emit(f"✓ 安全令 [{code}] 键入成功", T()['accent'].name())
         except Exception as e:
-            signals.update_status.emit(f"✗ 注入失败: {e}", "#FF3030")
+            signals.update_status.emit(f"✗ 键入失败: {e}", "#FF3030")
         finally:
             self._is_injecting = False
 
