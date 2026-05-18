@@ -4000,7 +4000,7 @@ class MainWindow(QWidget):
             self.btn_next.setFixedSize(58, 34)
             self.btn_next.setText("下号 ▶")
             self.btn_launch.setFixedHeight(36)
-            self.btn_launch.setText("◎ 启动OW (F4)")
+            self.btn_launch.setText("◎ 登出账号")
             # 压缩主窗口边距
             self.layout().setContentsMargins(8, 6, 8, 8)
             self.layout().setSpacing(5)
@@ -4165,34 +4165,34 @@ class MainWindow(QWidget):
 
     def _inject_credentials(self, user, pwd):
         """
-        直接通过键盘模拟逐字输入账密到当前焦点输入框。
-        不操作剪贴板、不切换窗口，用户需要先点击浏览器账号输入框。
+        通过剪贴板粘贴账密到当前焦点输入框。
+        不切换窗口，用户需要先点击浏览器账号输入框。
         """
         try:
             # 让 F4 按键完全释放
             time.sleep(0.08)
-            # 切英文输入法（避免中文输入法吞字符）
+            # 切英文输入法
             force_english_ime()
             time.sleep(0.05)
 
-            # 账号 - 清空当前框并键入
+            # 账号 - 清空当前框并粘贴
             clear_focused_input()
             time.sleep(0.03)
-            keyboard.write(user, delay=0.01)
-            time.sleep(0.06)
+            paste_text_via_clipboard(user)
+            time.sleep(0.08)
             pyautogui.press('tab')
-            time.sleep(0.10)
-            # 密码 - 清空当前框并键入
+            time.sleep(0.12)
+            # 密码 - 清空当前框并粘贴
             clear_focused_input()
             time.sleep(0.03)
-            keyboard.write(pwd, delay=0.01)
-            time.sleep(0.06)
+            paste_text_via_clipboard(pwd)
+            time.sleep(0.08)
             pyautogui.press('enter')
             signals.update_status.emit(
-                "✓ 账密键入完成！等待安全令页面后按 F2", T()['accent'].name()
+                "✓ 账密注入完成！等待安全令页面后按 F2", T()['accent'].name()
             )
         except Exception as e:
-            signals.update_status.emit(f"✗ 键入失败: {e}", "#FF3030")
+            signals.update_status.emit(f"✗ 注入失败: {e}", "#FF3030")
         finally:
             self._is_injecting = False
 
@@ -4220,8 +4220,8 @@ class MainWindow(QWidget):
 
     def _inject_token(self, code):
         """
-        直接通过键盘模拟逐字输入安全令到当前焦点输入框。
-        不操作剪贴板、不切换窗口，用户需要先点击浏览器安全令输入框。
+        通过剪贴板粘贴安全令到当前焦点输入框。
+        不切换窗口，用户需要先点击浏览器安全令输入框。
         """
         try:
             time.sleep(0.08)
@@ -4229,12 +4229,12 @@ class MainWindow(QWidget):
             time.sleep(0.05)
             clear_focused_input()
             time.sleep(0.03)
-            keyboard.write(code, delay=0.01)
-            time.sleep(0.06)
+            paste_text_via_clipboard(code)
+            time.sleep(0.08)
             pyautogui.press('enter')
-            signals.update_status.emit(f"✓ 安全令 [{code}] 键入成功", T()['accent'].name())
+            signals.update_status.emit(f"✓ 安全令 [{code}] 注入成功", T()['accent'].name())
         except Exception as e:
-            signals.update_status.emit(f"✗ 键入失败: {e}", "#FF3030")
+            signals.update_status.emit(f"✗ 注入失败: {e}", "#FF3030")
         finally:
             self._is_injecting = False
 
