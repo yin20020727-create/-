@@ -3671,6 +3671,7 @@ class MainWindow(QWidget):
 
         self.hideable_widgets = []
         self.shrinkable_buttons = []
+        self.mini_hideable_icons_labels = []  # 极简模式隐藏备注/入队码行的图标和标签
 
         def build_row(row, icon, color, label, readonly, btn_cfgs):
             ibox = ThemedIconBox(icon, color)
@@ -3699,6 +3700,8 @@ class MainWindow(QWidget):
             card_grid.addWidget(box_w, row, 3)
             if row in [0, 1, 2]:
                 self.hideable_widgets.extend([ibox, lbl, widget, box_w])
+            if row in [3, 4]:
+                self.mini_hideable_icons_labels.extend([ibox, lbl])
             return widget
 
         self.input_user = build_row(0, "👤", "#3B82F6", "账号", True,
@@ -3958,9 +3961,12 @@ class MainWindow(QWidget):
 
     def toggle_mini_mode(self):
         self.is_mini_mode = not self.is_mini_mode
-        # ── 极简模式：只保留 备注+入队码+上下号+切号+启动OW ──
+        # ── 极简模式：只保留 备注+入队码+上下号+启动OW ──
         # 隐藏账号/密码/安全令行（rows 0,1,2）
         for w in self.hideable_widgets:
+            w.setVisible(not self.is_mini_mode)
+        # 隐藏备注/入队码行的图标和标签（极简模式下不需要）
+        for w in self.mini_hideable_icons_labels:
             w.setVisible(not self.is_mini_mode)
         # 隐藏进度头部（序号/导入/总览按钮）
         self.header_widget.setVisible(not self.is_mini_mode)
@@ -3968,38 +3974,39 @@ class MainWindow(QWidget):
         self.info_bar_widget.setVisible(not self.is_mini_mode)
         # 隐藏卡片内状态文本
         self.lbl_inner_status.setVisible(not self.is_mini_mode)
-        # 隐藏标题栏中的主题/设置按钮（保留标题文字+pin+mini+最小化+关闭）
+        # 隐藏标题栏中的主题/设置/置顶按钮
         self.btn_theme.setVisible(not self.is_mini_mode)
         self.btn_settings.setVisible(not self.is_mini_mode)
+        self.btn_pin.setVisible(not self.is_mini_mode)
         # 备注/入队码行按钮压缩
         for btn, text, icon in self.shrinkable_buttons:
             if self.is_mini_mode:
-                btn.setText(icon); btn.setFixedWidth(32); btn.setFixedHeight(28)
+                btn.setText(icon); btn.setFixedWidth(26); btn.setFixedHeight(24)
             else:
                 btn.setText(f"{icon} {text}" if icon else text)
                 btn.setFixedWidth(70); btn.setFixedHeight(36)
         if self.is_mini_mode:
             # 压缩标题
-            self.lbl_title.setText("🛡️ 极简战斗")
+            self.lbl_title.setText("⚔ 极简")
             # 压缩卡片内边距
-            self.card.layout().setContentsMargins(10, 8, 10, 8)
-            self.card.layout().setSpacing(6)
+            self.card.layout().setContentsMargins(6, 4, 6, 4)
+            self.card.layout().setSpacing(3)
             # 压缩输入框高度
-            self.input_remark.setFixedHeight(30)
-            self.input_invite.setFixedHeight(30)
+            self.input_remark.setFixedHeight(26)
+            self.input_invite.setFixedHeight(26)
             # 压缩操作行按钮
-            self.btn_prev.setFixedSize(70, 36)
+            self.btn_prev.setFixedSize(50, 30)
             self.btn_prev.setText("◀ 上号")
-            self.btn_next.setFixedSize(70, 36)
+            self.btn_next.setFixedSize(50, 30)
             self.btn_next.setText("下号 ▶")
-            self.btn_launch.setFixedHeight(38)
+            self.btn_launch.setFixedHeight(32)
             self.btn_launch.setText("◎ 启动OW (F4)")
             # 压缩主窗口边距
-            self.layout().setContentsMargins(12, 8, 12, 10)
-            self.layout().setSpacing(6)
+            self.layout().setContentsMargins(6, 4, 6, 6)
+            self.layout().setSpacing(3)
             # 极限压缩窗口尺寸
-            self.resize(420, 195)
-            self.setMinimumSize(420, 195)
+            self.setMinimumSize(360, 148)
+            self.resize(360, 148)
             self.set_status_text("⚔ 极简战斗模式")
         else:
             # 恢复标题
@@ -4306,12 +4313,12 @@ class MainWindow(QWidget):
         # 标记当前账号已用 + 时间戳
         if not self.db[self.current_idx].get("used"):
             mark_account_used_now(self.db[self.current_idx])
-            save_accounts(self.db)
-            increment_today_stat()
         else:
             # 已用账号也更新时间（重新登录）
             self.db[self.current_idx]['last_used'] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-            save_accounts(self.db)
+        save_accounts(self.db)
+        # 每次切号都计数（无论账号是否首次使用）
+        increment_today_stat()
         if self.current_idx < len(self.db) - 1:
             self.current_idx += 1
             save_config(current_idx=self.current_idx)
