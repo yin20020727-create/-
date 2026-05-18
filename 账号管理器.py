@@ -3992,21 +3992,21 @@ class MainWindow(QWidget):
             self.card.layout().setContentsMargins(8, 6, 8, 6)
             self.card.layout().setSpacing(5)
             # 压缩输入框高度
-            self.input_remark.setFixedHeight(30)
-            self.input_invite.setFixedHeight(30)
+            self.input_remark.setFixedHeight(32)
+            self.input_invite.setFixedHeight(32)
             # 压缩操作行按钮
-            self.btn_prev.setFixedSize(55, 32)
+            self.btn_prev.setFixedSize(58, 34)
             self.btn_prev.setText("◀ 上号")
-            self.btn_next.setFixedSize(55, 32)
+            self.btn_next.setFixedSize(58, 34)
             self.btn_next.setText("下号 ▶")
-            self.btn_launch.setFixedHeight(34)
+            self.btn_launch.setFixedHeight(36)
             self.btn_launch.setText("◎ 启动OW (F4)")
             # 压缩主窗口边距
             self.layout().setContentsMargins(8, 6, 8, 8)
             self.layout().setSpacing(5)
-            # 极限压缩窗口尺寸（稍微加大避免文字截断）
-            self.setMinimumSize(380, 175)
-            self.resize(380, 175)
+            # 极限压缩窗口尺寸（加大避免文字截断）
+            self.setMinimumSize(400, 195)
+            self.resize(400, 195)
             self.set_status_text("⚔ 极简战斗模式")
         else:
             # 恢复标题
