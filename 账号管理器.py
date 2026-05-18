@@ -3751,6 +3751,15 @@ class MainWindow(QWidget):
         action.addWidget(btn_next)
         main_layout.addLayout(action)
 
+        # 守望先锋启动行
+        ow_row = QHBoxLayout()
+        ow_row.setSpacing(15)
+        btn_ow = ThemedButton("🎯 启动守望先锋", 'gold')
+        btn_ow.setFixedHeight(44)
+        btn_ow.clicked.connect(self.launch_overwatch)
+        ow_row.addWidget(btn_ow, stretch=1)
+        main_layout.addLayout(ow_row)
+
     def apply_qss(self):
         theme = T()
         c = theme['primary']; sec = theme['secondary']; acc = theme['accent']
@@ -4338,6 +4347,34 @@ class MainWindow(QWidget):
                 signals.update_status.emit(f"✗ 启动失败: {e}", "#FF3030")
 
         threading.Thread(target=workflow, daemon=True).start()
+
+    # ═══════════════════════════════════════════════════════════════
+    # 启动守望先锋
+    # ═══════════════════════════════════════════════════════════════
+    def launch_overwatch(self):
+        self.set_status_text("🎯 正在启动守望先锋...")
+
+        def ow_workflow():
+            cfg = load_config()
+            bnet_path = cfg.get('bnet_path', DEFAULT_BNET_LAUNCHER)
+            if not os.path.exists(bnet_path):
+                if os.path.exists(DEFAULT_BNET_LAUNCHER):
+                    bnet_path = DEFAULT_BNET_LAUNCHER
+                else:
+                    signals.update_status.emit(
+                        "✗ 未找到战网路径，请到设置中配置", "#FF3030"
+                    )
+                    return
+            try:
+                # 守望先锋2的启动参数: --game=pro (Pro = Prometheus = Overwatch 2)
+                subprocess.Popen([bnet_path, "--game=pro"])
+                signals.update_status.emit(
+                    "✅ 守望先锋启动中...", T()['accent'].name()
+                )
+            except Exception as e:
+                signals.update_status.emit(f"✗ 启动失败: {e}", "#FF3030")
+
+        threading.Thread(target=ow_workflow, daemon=True).start()
 
     # ═══════════════════════════════════════════════════════════════
     # 关闭事件
