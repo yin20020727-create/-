@@ -4093,6 +4093,9 @@ class MainWindow(QWidget):
         try:
             # 让 F4 完全释放
             time.sleep(0.05)
+            # 切英文输入法，防止中文输入法导致重复字符
+            force_english_ime()
+            time.sleep(0.1)
             # 不切窗口，直接在当前焦点（浏览器输入框）输入
             # 清空当前输入框
             clear_focused_input()
